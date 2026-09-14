@@ -313,11 +313,54 @@ DEFAULT_YEARS = {
             "Ballistics": {},
             "Medical Jurisprudence": {},
             "Autopsy": {},
-            "Human Identification": {}
+            "Human Identification": {},
+            "Asphyxia": {},
+            "Sexual Jurisprudence": {},
+            "Toxicology": {},
+            "Forensic Psychiatry": {}
         },
-        "PSM": {},
-        "Ophthalmology": {},
-        "ENT": {}
+        "PSM": {
+            "Demography And Family Planning": {},
+            "MCH": {},
+            "Immunisation": {},
+            "National Health Programs": {},
+            "Epidemiology": {},
+            "Screening": {},
+            "Biostatistics": {},
+            "Healthcare Planning": {},
+            "Infectious": {},
+            "Communicable": {},
+            "Non Communicable": {},
+            "Nutrition": {},
+            "Environment": {},
+            "BMW": {},
+            "Occupational Health": {},
+            "Concept of Health": {},
+            "Health Communication": {},
+            "International Health Organisation": {},
+            "Social Medicine": {},
+            "Miscellaneous": {},
+            "Recent Updates": {}
+        },
+        "Ophthalmology": {
+            "Basics": {},
+            "Cornea Sclera": {},
+            "Neuro Ophthalmology": {},
+            "Squint": {},
+            "Lens and Blunt Trauma": {},
+            "Uvea": {},
+            "Glaucoma": {},
+            "Optics": {},
+            "Retina": {},
+            "Eyelids Orbit": {},
+            "Conjunctiva": {}
+        },
+        "ENT": {
+            "Ear": {},
+            "Nose": {},
+            "Pharynx": {},
+            "Larynx": {}
+        }
     },
 
     "Major": {
