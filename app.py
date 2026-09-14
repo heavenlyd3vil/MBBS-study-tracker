@@ -383,11 +383,33 @@ DEFAULT_YEARS = {
 # ============================================================
 # DATABASE
 # ============================================================
+#
+# Local SQLite is used for instant UI saves.
+# Supabase is used as the persistent cloud backup.
+# Cloud uploads happen in the background so button clicks do not
+# wait for the network.
+# ============================================================
 
 DB_FILE = "medical_tracker.db"
 
+from concurrent.futures import ThreadPoolExecutor
+from supabase import create_client
 
-def create_database():
+
+@st.cache_resource
+def get_supabase_client():
+    return create_client(
+        st.secrets["SUPABASE_URL"],
+        st.secrets["SUPABASE_KEY"]
+    )
+
+
+@st.cache_resource
+def get_sync_executor():
+    return ThreadPoolExecutor(max_workers=1)
+
+
+def create_local_database():
 
     connection = sqlite3.connect(DB_FILE)
 
@@ -406,9 +428,9 @@ def create_database():
     connection.close()
 
 
-def load_database():
+def load_local_database():
 
-    create_database()
+    create_local_database()
 
     connection = sqlite3.connect(DB_FILE)
 
@@ -427,14 +449,13 @@ def load_database():
 
     try:
         return json.loads(result[0])
-
     except Exception:
         return None
 
 
-def save_database(data):
+def save_local_database(data):
 
-    create_database()
+    create_local_database()
 
     connection = sqlite3.connect(DB_FILE)
 
@@ -451,6 +472,74 @@ def save_database(data):
     connection.commit()
     connection.close()
 
+
+def cloud_save(data):
+
+    try:
+        client = create_client(
+            st.secrets["SUPABASE_URL"],
+            st.secrets["SUPABASE_KEY"]
+        )
+
+        (
+            client
+            .table("tracker_data")
+            .upsert(
+                {
+                    "id": 1,
+                    "data": data
+                }
+            )
+            .execute()
+        )
+
+    except Exception:
+        # The local SQLite copy has already been saved.
+        # Cloud syncing will be attempted again on the next save.
+        pass
+
+
+def load_database():
+
+    try:
+        client = get_supabase_client()
+
+        result = (
+            client
+            .table("tracker_data")
+            .select("data")
+            .eq("id", 1)
+            .execute()
+        )
+
+        if result.data:
+            cloud_data = result.data[0]["data"]
+
+            # Keep a local copy as well.
+            save_local_database(cloud_data)
+
+            return cloud_data
+
+    except Exception:
+        pass
+
+    # If Supabase is temporarily unavailable or has no data,
+    # use the local copy.
+    return load_local_database()
+
+
+def save_database(data):
+
+    # 1. Save locally first. This is effectively instantaneous.
+    save_local_database(data)
+
+    # 2. Send a snapshot to Supabase in the background.
+    data_snapshot = copy.deepcopy(data)
+
+    get_sync_executor().submit(
+        cloud_save,
+        data_snapshot
+    )
 
 # ============================================================
 # LOAD DATA
@@ -1486,12 +1575,20 @@ def show_topic_detail(
             )
         )
 
-    topic_data["pyqs"] = pyq
-    topic_data["subject_test"] = test
+    old_pyq = topic_data.get("pyqs", False)
+    old_test = topic_data.get("subject_test", False)
 
-    save_database(
-        st.session_state.years
-    )
+    if pyq != old_pyq or test != old_test:
+        old_pyq = topic_data.get("pyqs", False)
+        old_test = topic_data.get("subject_test", False)
+
+        if pyq != old_pyq or test != old_test:
+            topic_data["pyqs"] = pyq
+            topic_data["subject_test"] = test
+
+            save_database(
+                st.session_state.years
+            )
 
 
 # ============================================================
