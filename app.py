@@ -364,10 +364,32 @@ DEFAULT_YEARS = {
     },
 
     "Major": {
-        "Medicine": {},
-        "Surgery": {},
-        "OBG": {},
-        "Paediatrics": {}
+        "Medicine": {
+            "Gastroenterology": {}, "Endocrine": {}, "Hematology": {},
+            "Respiratory": {}, "Nephrology": {}, "Hepatology": {},
+            "Cardiology": {}, "ECG": {}, "Neurology": {},
+            "Rheumatology": {}, "Acid base": {}, "Infectious": {}
+        },
+        "Surgery": {
+            "General": {}, "Breast": {}, "Endocrine": {}, "Abdominal": {},
+            "Urology": {}, "Specialty": {}, "Trauma": {}, "Hernia": {},
+            "Vascular": {}, "Faciomaxillary": {}, "Miscellaneous": {}
+        },
+        "OBG": {
+            "General gynae": {}, "Gynae infections": {}, "Infertility": {},
+            "Contraception": {}, "Oncology": {},
+            "Fundamentals of reproduction": {}, "Normal pregnancy and ANC": {},
+            "Medical and surgical complications": {}, "Obstetric complications": {},
+            "Labor and puerperium": {}
+        },
+        "Paediatrics": {
+            "Neonatology": {}, "Growth and development": {}, "Nutrition": {},
+            "Genetic disorders": {}, "Childhood infections": {},
+            "Gastrointestinal": {}, "Respiratory": {}, "Genitourinary": {},
+            "Cardiovascular": {}, "Nervous": {}, "Endocrine": {},
+            "Rheumatology": {}, "Malignancies": {}, "Hematology": {},
+            "Miscellaneous": {}
+        }
     },
 
     "Minor": {
@@ -587,7 +609,13 @@ def clean_normal_year(year_data):
 
         for topic_name, topic_data in topics.items():
 
-            if isinstance(topic_data, dict):
+            if topic_name in {
+                "subject_pyqs",
+                "subject_test"
+            }:
+                cleaned_topics[topic_name] = bool(topic_data)
+
+            elif isinstance(topic_data, dict):
                 cleaned_topics[topic_name] = topic_data
 
             else:
@@ -610,27 +638,51 @@ for year_name in [
 
 
 for page_name in [
-    "Major",
-    "Minor"
+    "Major"
 ]:
 
-    if not isinstance(
-        years.get(page_name),
-        dict
-    ):
+    years[page_name] = clean_normal_year(
+        years.get(page_name, {})
+    )
 
-        years[page_name] = {}
 
-    for topic_name in list(
-        years[page_name].keys()
-    ):
+# ============================================================
+# CLEAN OLD MAJOR STRUCTURE
+# ============================================================
+# Major used to contain tracker components such as:
+# notes, revision, question_banks, pyqs and subject_test
+# directly as topics. Major now follows the same structure as
+# Years 1-3: Medicine/Surgery/OBG/Paediatrics each contain
+# their actual syllabus subtopics. Remove any old component
+# entries while preserving progress for valid subtopics.
+# ============================================================
 
-        if not isinstance(
-            years[page_name][topic_name],
-            dict
-        ):
+if isinstance(years.get("Major"), dict):
+    cleaned_major = {}
 
-            years[page_name][topic_name] = {}
+    for subject_name, default_topics in DEFAULT_YEARS.get("Major", {}).items():
+        existing_topics = years["Major"].get(subject_name, {})
+
+        if not isinstance(existing_topics, dict):
+            existing_topics = {}
+
+        cleaned_major[subject_name] = {}
+
+        # Preserve subject-level tracking fields.
+        cleaned_major[subject_name]["subject_pyqs"] = existing_topics.get(
+            "subject_pyqs", False
+        )
+        cleaned_major[subject_name]["subject_test"] = existing_topics.get(
+            "subject_test", False
+        )
+
+        for topic_name in default_topics:
+            if topic_name in existing_topics and isinstance(existing_topics[topic_name], dict):
+                cleaned_major[subject_name][topic_name] = existing_topics[topic_name]
+            else:
+                cleaned_major[subject_name][topic_name] = {}
+
+    years["Major"] = cleaned_major
 
 
 # ============================================================
@@ -645,24 +697,24 @@ for year_name, default_year in DEFAULT_YEARS.items():
             default_year
         )
 
-    if year_name in [
-        "Major",
-        "Minor"
-    ]:
+    for subject_name, topics in default_year.items():
 
-        for name in default_year:
+        if subject_name not in years[year_name]:
 
-            if name not in years[year_name]:
+            years[year_name][subject_name] = copy.deepcopy(
+                topics
+            )
 
-                years[year_name][name] = {}
+        elif not isinstance(
+            years[year_name][subject_name],
+            dict
+        ):
 
-    else:
+            years[year_name][subject_name] = copy.deepcopy(
+                topics
+            )
 
-        for subject_name, topics in default_year.items():
-
-            if subject_name not in years[year_name]:
-
-                years[year_name][subject_name] = {}
+        else:
 
             for topic_name in topics:
 
@@ -674,6 +726,32 @@ for year_name, default_year in DEFAULT_YEARS.items():
                         year_name
                     ][subject_name][topic_name] = {}
 
+
+# ============================================================
+# ADD SUBJECT-LEVEL PYQ / TEST TRACKING
+# ============================================================
+# These two fields belong to the subject itself, not to an
+# individual topic. They are used for the subject-level
+# checkboxes and the green/red status boxes on the Year pages.
+# ============================================================
+
+for year_name in [
+    "First Year",
+    "Second Year",
+    "Third Year",
+    "Major"
+]:
+
+    for subject_name in years.get(year_name, {}):
+
+        subject_data = years[year_name][subject_name]
+
+        if not isinstance(subject_data, dict):
+            subject_data = {}
+            years[year_name][subject_name] = subject_data
+
+        subject_data.setdefault("subject_pyqs", False)
+        subject_data.setdefault("subject_test", False)
 
 save_database(years)
 
@@ -749,16 +827,68 @@ def css_key(text):
     )
 
 
+def _safe_number(value):
+
+    if isinstance(value, bool):
+        return 0
+
+    if isinstance(value, (int, float)):
+        return max(0, min(100, value))
+
+    return 0
+
+
+def _safe_bool(value):
+
+    return value is True
+
+
+def _real_topics(data):
+
+    if not isinstance(data, dict):
+        return []
+
+    return [
+        topic_data
+        for topic_name, topic_data in data.items()
+        if topic_name not in {
+            "subject_pyqs",
+            "subject_test"
+        }
+        and isinstance(topic_data, dict)
+    ]
+
+
 def get_topic_percentage(topic_data):
 
     if not isinstance(topic_data, dict):
         return 0
 
+    # Displayed topic progress: Notes, Revision Notes and
+    # Question Banks only. Topic PYQs are tracked separately.
     return (
-        topic_data.get("notes", 0)
-        + topic_data.get("revision", 0)
-        + topic_data.get("question_banks", 0)
+        _safe_number(topic_data.get("notes", 0))
+        + _safe_number(topic_data.get("revision", 0))
+        + _safe_number(topic_data.get("question_banks", 0))
     ) / 3
+
+
+def get_topic_academic_percentage(topic_data):
+
+    if not isinstance(topic_data, dict):
+        return 0
+
+    # The four topic-level components are kept separate and
+    # contribute equally inside the 85% topic component:
+    # Notes, Revision Notes, Question Banks and Topic PYQs.
+    topic_pyqs = 100 if _safe_bool(topic_data.get("pyqs", False)) else 0
+
+    return (
+        _safe_number(topic_data.get("notes", 0))
+        + _safe_number(topic_data.get("revision", 0))
+        + _safe_number(topic_data.get("question_banks", 0))
+        + topic_pyqs
+    ) / 4
 
 
 def get_subtopic_full_score(topic_data):
@@ -766,63 +896,105 @@ def get_subtopic_full_score(topic_data):
     if not isinstance(topic_data, dict):
         return 0
 
-    score = 0
+    # Minor has no subtopics. Each Minor entry is itself a
+    # complete subject, so its Notes/Revision/Question Banks
+    # make up 85%, its PYQs 10% and its Test 5%.
+    study_progress = (
+        _safe_number(topic_data.get("notes", 0))
+        + _safe_number(topic_data.get("revision", 0))
+        + _safe_number(topic_data.get("question_banks", 0))
+    ) / 3
 
-    score += topic_data.get("notes", 0)
-    score += topic_data.get("revision", 0)
-    score += topic_data.get("question_banks", 0)
+    pyqs = 100 if _safe_bool(topic_data.get("pyqs", False)) else 0
+    test = 100 if _safe_bool(topic_data.get("subject_test", False)) else 0
 
-    if topic_data.get("pyqs", False):
-        score += 100
+    return (
+        study_progress * 0.85
+        + pyqs * 0.10
+        + test * 0.05
+    )
 
-    if topic_data.get("subject_test", False):
-        score += 100
 
-    return score / 5
+def get_subtopic_academic_score(topic_data):
+
+    if not isinstance(topic_data, dict):
+        return 0
+
+    return get_topic_academic_percentage(topic_data)
 
 
 def get_subject_topic_progress(topics):
 
-    if not isinstance(topics, dict):
+    real_topics = _real_topics(topics)
+
+    if not real_topics:
         return 0
 
-    scores = []
-
-    for topic_data in topics.values():
-
-        if isinstance(topic_data, dict):
-
-            scores.append(
-                get_topic_percentage(
-                    topic_data
-                )
-            )
-
-    if not scores:
-        return 0
+    scores = [
+        get_topic_percentage(topic_data)
+        for topic_data in real_topics
+    ]
 
     return sum(scores) / len(scores)
 
 
-def get_subject_overall_progress(topics):
+def get_subject_topic_progress_academic(subject_data):
 
-    if not isinstance(topics, dict):
+    real_topics = _real_topics(subject_data)
+
+    if not real_topics:
         return 0
 
-    scores = []
+    scores = [
+        get_topic_academic_percentage(topic_data)
+        for topic_data in real_topics
+    ]
 
-    for topic_data in topics.values():
+    return sum(scores) / len(scores)
 
-        if isinstance(topic_data, dict):
 
-            scores.append(
-                get_subtopic_full_score(
-                    topic_data
-                )
-            )
+def get_subject_overall_progress(subject_data):
 
-    if not scores:
+    if not isinstance(subject_data, dict):
         return 0
+
+    real_topics = _real_topics(subject_data)
+
+    # 85% = actual topic work, with Notes, Revision Notes,
+    # Question Banks and Topic PYQs each accounted for separately.
+    if real_topics:
+        topic_component = (
+            sum(
+                get_topic_academic_percentage(topic_data)
+                for topic_data in real_topics
+            ) / len(real_topics)
+        )
+    else:
+        topic_component = 0
+
+    # The remaining 15% belongs to the subject as a whole:
+    # Subject PYQs = 10%, Subject Test = 5%.
+    subject_pyq = 100 if _safe_bool(subject_data.get("subject_pyqs", False)) else 0
+    subject_test = 100 if _safe_bool(subject_data.get("subject_test", False)) else 0
+
+    return (
+        topic_component * 0.85
+        + subject_pyq * 0.10
+        + subject_test * 0.05
+    )
+
+
+def get_subject_academic_progress(topics):
+
+    real_topics = _real_topics(topics)
+
+    if not real_topics:
+        return 0
+
+    scores = [
+        get_topic_academic_percentage(topic_data)
+        for topic_data in real_topics
+    ]
 
     return sum(scores) / len(scores)
 
@@ -832,11 +1004,7 @@ def get_pyq_progress(topics):
     if not isinstance(topics, dict):
         return 0, "0/0"
 
-    valid_topics = [
-        topic_data
-        for topic_data in topics.values()
-        if isinstance(topic_data, dict)
-    ]
+    valid_topics = _real_topics(topics)
 
     if not valid_topics:
         return 0, "0/0"
@@ -844,14 +1012,11 @@ def get_pyq_progress(topics):
     completed = sum(
         1
         for topic_data in valid_topics
-        if topic_data.get("pyqs", False)
+        if _safe_bool(topic_data.get("pyqs", False))
     )
 
     total = len(valid_topics)
-
-    percentage = (
-        completed / total
-    ) * 100
+    percentage = (completed / total) * 100
 
     return percentage, f"{completed}/{total}"
 
@@ -861,11 +1026,7 @@ def get_test_progress(topics):
     if not isinstance(topics, dict):
         return 0, "0/0"
 
-    valid_topics = [
-        topic_data
-        for topic_data in topics.values()
-        if isinstance(topic_data, dict)
-    ]
+    valid_topics = _real_topics(topics)
 
     if not valid_topics:
         return 0, "0/0"
@@ -873,125 +1034,110 @@ def get_test_progress(topics):
     completed = sum(
         1
         for topic_data in valid_topics
-        if topic_data.get(
-            "subject_test",
-            False
-        )
+        if _safe_bool(topic_data.get("subject_test", False))
     )
 
     total = len(valid_topics)
-
-    percentage = (
-        completed / total
-    ) * 100
+    percentage = (completed / total) * 100
 
     return percentage, f"{completed}/{total}"
 
 
 def get_year_progress(year):
 
-    if year in [
-        "Major",
-        "Minor"
-    ]:
+    # Minor has no subtopics. Each Minor entry is itself a
+    # complete subject, so calculate each entry directly.
+    if year == "Minor":
+        topic_scores = []
+        for topic_data in years.get("Minor", {}).values():
+            if isinstance(topic_data, dict):
+                topic_scores.append(get_subtopic_full_score(topic_data))
 
-        return get_subject_overall_progress(
-            years[year]
-        )
+        if not topic_scores:
+            return 0
 
-    scores = []
+        # Minor is separate from the 9-semester overall weighting.
+        return sum(topic_scores) / len(topic_scores)
 
-    year_data = years.get(
-        year,
-        {}
-    )
+    year_data = years.get(year, {})
 
-    for topics in year_data.values():
+    # No subject-wise weighting for the 85% topic component:
+    # every actual topic in the year counts equally.
+    all_topic_scores = []
+    subject_pyq_scores = []
+    subject_test_scores = []
 
-        if not isinstance(topics, dict):
+    for subject_data in year_data.values():
+        if not isinstance(subject_data, dict):
             continue
 
-        for topic_data in topics.values():
+        real_topics = _real_topics(subject_data)
+        if not real_topics:
+            continue
 
-            if isinstance(topic_data, dict):
+        all_topic_scores.extend(
+            get_topic_academic_percentage(topic_data)
+            for topic_data in real_topics
+        )
 
-                scores.append(
-                    get_subtopic_full_score(
-                        topic_data
-                    )
-                )
+        # These are subject-level items and are therefore counted
+        # once for the subject as a whole, not once per topic.
+        subject_pyq_scores.append(
+            100 if _safe_bool(subject_data.get("subject_pyqs", False)) else 0
+        )
+        subject_test_scores.append(
+            100 if _safe_bool(subject_data.get("subject_test", False)) else 0
+        )
 
-    if not scores:
+    if not all_topic_scores:
         return 0
 
-    return sum(scores) / len(scores)
+    topic_component = sum(all_topic_scores) / len(all_topic_scores)
+    subject_pyq_component = (
+        sum(subject_pyq_scores) / len(subject_pyq_scores)
+        if subject_pyq_scores else 0
+    )
+    subject_test_component = (
+        sum(subject_test_scores) / len(subject_test_scores)
+        if subject_test_scores else 0
+    )
+
+    return (
+        topic_component * 0.85
+        + subject_pyq_component * 0.10
+        + subject_test_component * 0.05
+    )
 
 
 def get_overall_progress():
 
-    scores = []
+    # Curriculum time weighting from the 9-semester structure:
+    # First Year = 2 semesters, Second Year = 2,
+    # Third Year = 3, Major = 2.
+    # Minor is completely separate from this calculation.
+    semester_weights = {
+        "First Year": 2,
+        "Second Year": 2,
+        "Third Year": 3,
+        "Major": 2
+    }
 
-    for year_name in [
-        "First Year",
-        "Second Year",
-        "Third Year"
-    ]:
+    total_weighted_progress = 0
+    total_weight = 0
 
-        year_data = years.get(
-            year_name,
-            {}
-        )
+    for year_name, semester_weight in semester_weights.items():
+        year_progress = get_year_progress(year_name)
 
-        for topics in year_data.values():
+        # A year represents its number of semesters, regardless of
+        # how many subjects or topics happen to be inside it.
+        total_weighted_progress += year_progress * semester_weight
+        total_weight += semester_weight
 
-            if not isinstance(topics, dict):
-                continue
-
-            for topic_data in topics.values():
-
-                if isinstance(topic_data, dict):
-
-                    scores.append(
-                        get_subtopic_full_score(
-                            topic_data
-                        )
-                    )
-
-    for topic_data in years.get(
-        "Major",
-        {}
-    ).values():
-
-        if isinstance(topic_data, dict):
-
-            scores.append(
-                get_subtopic_full_score(
-                    topic_data
-                )
-            )
-
-    for topic_data in years.get(
-        "Minor",
-        {}
-    ).values():
-
-        if isinstance(topic_data, dict):
-
-            scores.append(
-                get_subtopic_full_score(
-                    topic_data
-                )
-            )
-
-    if not scores:
+    if total_weight == 0:
         return 0
 
-    return sum(scores) / len(scores)
+    return total_weighted_progress / total_weight
 
-
-# ============================================================
-# PROGRESS BAR
-# ============================================================
 
 def get_progress_color(percentage):
 
@@ -1484,7 +1630,7 @@ def show_topic_detail(
 
     st.title(topic)
 
-    percentage = get_topic_percentage(
+    percentage = get_topic_academic_percentage(
         topic_data
     )
 
@@ -1538,57 +1684,27 @@ def show_topic_detail(
 
     st.divider()
 
-    status_col1, status_col2 = st.columns(
-        2,
-        gap="small"
+    pyq = st.checkbox(
+        "Topic Pyqs",
+        value=topic_data.get(
+            "pyqs",
+            False
+        ),
+        key=(
+            f"detail_pyq_"
+            f"{css_key(year)}_"
+            f"{css_key(subject)}_"
+            f"{css_key(topic)}"
+        )
     )
 
-    with status_col1:
-
-        pyq = st.checkbox(
-            "PYQs",
-            value=topic_data.get(
-                "pyqs",
-                False
-            ),
-            key=(
-                f"detail_pyq_"
-                f"{css_key(year)}_"
-                f"{css_key(subject)}_"
-                f"{css_key(topic)}"
-            )
-        )
-
-    with status_col2:
-
-        test = st.checkbox(
-            "Subject Test",
-            value=topic_data.get(
-                "subject_test",
-                False
-            ),
-            key=(
-                f"detail_test_"
-                f"{css_key(year)}_"
-                f"{css_key(subject)}_"
-                f"{css_key(topic)}"
-            )
-        )
-
     old_pyq = topic_data.get("pyqs", False)
-    old_test = topic_data.get("subject_test", False)
 
-    if pyq != old_pyq or test != old_test:
-        old_pyq = topic_data.get("pyqs", False)
-        old_test = topic_data.get("subject_test", False)
-
-        if pyq != old_pyq or test != old_test:
-            topic_data["pyqs"] = pyq
-            topic_data["subject_test"] = test
-
-            save_database(
-                st.session_state.years
-            )
+    if pyq != old_pyq:
+        topic_data["pyqs"] = pyq
+        save_database(
+            st.session_state.years
+        )
 
 
 # ============================================================
@@ -1765,84 +1881,37 @@ elif st.session_state.selected_page == "year":
     year = st.session_state.selected_year
 
     # ========================================================
-    # MAJOR / MINOR
+    # MAJOR
     # ========================================================
 
-    if year in [
-        "Major",
-        "Minor"
-    ]:
-
-        page_data = years[year]
+    if year == "Major":
 
         st.title(year)
 
-        topic_percentage = get_subject_topic_progress(
-            page_data
+        year_progress = get_year_progress(
+            year
         )
 
         progress_bar(
-            topic_percentage,
-            f"Topics {topic_percentage:.1f}%"
+            year_progress,
+            f"Year Progress {year_progress:.1f}%"
         )
-
-        st.markdown(
-            "<div style='height: 8px;'></div>",
-            unsafe_allow_html=True
-        )
-
-        pyq_percentage, pyq_fraction = get_pyq_progress(
-            page_data
-        )
-
-        test_percentage, test_fraction = get_test_progress(
-            page_data
-        )
-
-        col1, col2 = st.columns(
-            2,
-            gap="small"
-        )
-
-        with col1:
-
-            progress_bar(
-                pyq_percentage,
-                f"PYQs {pyq_fraction}"
-            )
-
-        with col2:
-
-            progress_bar(
-                test_percentage,
-                f"Tests {test_fraction}"
-            )
 
         st.divider()
 
-        st.subheader("Topics")
+        subjects = years[year]
 
         columns = st.columns(
             3,
             gap="small"
         )
 
-        for i, topic in enumerate(page_data):
+        for i, subject in enumerate(subjects):
 
-            topic_data = page_data[topic]
+            topics = subjects[subject]
 
-            topic_percentage = get_topic_percentage(
-                topic_data
-            )
-
-            pyq_status = topic_data.get(
-                "pyqs",
-                False
-            )
-
-            test_status = topic_data.get(
-                "subject_test",
-                False
+            subject_progress = get_subject_overall_progress(
+                topics
             )
 
             with columns[i % 3]:
@@ -1850,53 +1919,114 @@ elif st.session_state.selected_page == "year":
                 with st.container(
                     border=True,
                     key=(
-                        "topic_card_"
+                        "subject_card_"
                         f"{css_key(year)}_"
-                        f"{css_key(topic)}"
+                        f"{css_key(subject)}"
                     ),
                     gap="small"
                 ):
 
                     if st.button(
-                        topic,
+                        subject,
                         key=(
-                            f"major_minor_topic_"
+                            f"subject_"
                             f"{css_key(year)}_"
-                            f"{css_key(topic)}"
+                            f"{css_key(subject)}"
                         ),
                         use_container_width=True
                     ):
 
                         go_subject(
                             year,
-                            topic
+                            subject
                         )
 
                         st.rerun()
 
                     progress_bar(
-                        topic_percentage,
-                        f"{topic_percentage:.1f}%"
+                        subject_progress,
+                        f"{subject_progress:.1f}%"
+                    )
+
+                    subject_pyq_status = topics.get(
+                        "subject_pyqs", False
+                    )
+                    subject_test_status = topics.get(
+                        "subject_test", False
                     )
 
                     status_col1, status_col2 = st.columns(
                         2,
                         gap="small"
                     )
-
                     with status_col1:
-
                         status_box(
-                            "PYQ",
-                            pyq_status
+                            "Subject PYQs",
+                            subject_pyq_status
                         )
-
                     with status_col2:
-
                         status_box(
-                            "Test",
-                            test_status
+                            "Subject Test",
+                            subject_test_status
                         )
+
+    # ========================================================
+    # MINOR (DIRECT TOPICS)
+    # ========================================================
+
+    elif year == "Minor":
+
+        page_data = years[year]
+        st.title(year)
+
+        topic_percentage = get_year_progress("Minor")
+        progress_bar(topic_percentage, f"Minor Progress {topic_percentage:.1f}%")
+
+        st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+
+        pyq_percentage, pyq_fraction = get_pyq_progress(page_data)
+        test_percentage, test_fraction = get_test_progress(page_data)
+
+        col1, col2 = st.columns(2, gap="small")
+        with col1:
+            progress_bar(pyq_percentage, f"PYQs {pyq_fraction}")
+        with col2:
+            progress_bar(test_percentage, f"Tests {test_fraction}")
+
+        st.divider()
+        st.subheader("Topics")
+        columns = st.columns(3, gap="small")
+
+        for i, topic in enumerate(page_data):
+            topic_data = page_data[topic]
+            if not isinstance(topic_data, dict):
+                topic_data = {}
+                page_data[topic] = topic_data
+
+            topic_percentage = get_topic_percentage(topic_data)
+            pyq_status = topic_data.get("pyqs", False) is True
+            test_status = topic_data.get("subject_test", False) is True
+
+            with columns[i % 3]:
+                with st.container(
+                    border=True,
+                    key=f"topic_card_{css_key(year)}_{css_key(topic)}",
+                    gap="small"
+                ):
+                    if st.button(
+                        topic,
+                        key=f"major_minor_topic_{css_key(year)}_{css_key(topic)}",
+                        use_container_width=True
+                    ):
+                        go_subject(year, topic)
+                        st.rerun()
+
+                    progress_bar(topic_percentage, f"{topic_percentage:.1f}%")
+                    status_col1, status_col2 = st.columns(2, gap="small")
+                    with status_col1:
+                        status_box("PYQ", pyq_status)
+                    with status_col2:
+                        status_box("Test", test_status)
 
     # ========================================================
     # NORMAL YEARS
@@ -1966,6 +2096,28 @@ elif st.session_state.selected_page == "year":
                         f"{subject_progress:.1f}%"
                     )
 
+                    subject_pyq_status = topics.get(
+                        "subject_pyqs", False
+                    )
+                    subject_test_status = topics.get(
+                        "subject_test", False
+                    )
+
+                    status_col1, status_col2 = st.columns(
+                        2,
+                        gap="small"
+                    )
+                    with status_col1:
+                        status_box(
+                            "Subject PYQs",
+                            subject_pyq_status
+                        )
+                    with status_col2:
+                        status_box(
+                            "Subject Test",
+                            subject_test_status
+                        )
+
 
 # ============================================================
 # SUBJECT PAGE
@@ -1977,130 +2129,55 @@ elif st.session_state.selected_page == "subject":
     subject = st.session_state.selected_subject
 
     # ========================================================
-    # MAJOR / MINOR DETAIL
+    # SUBJECT DETAILS
     # ========================================================
-
-    if year in [
-        "Major",
-        "Minor"
-    ]:
-
-        topic_data = years[year][subject]
-
-        if st.button(
-            f"← Back to {year}",
-            key=(
-                f"major_minor_back_"
-                f"{css_key(year)}_"
-                f"{css_key(subject)}"
-            )
-        ):
-
-            go_year(year)
-
-            st.rerun()
-
-        st.title(subject)
-
-        topic_percentage = get_topic_percentage(
-            topic_data
-        )
-
-        progress_bar(
-            topic_percentage,
-            f"{topic_percentage:.1f}%"
-        )
-
-        st.markdown(
-            "<div style='height: 10px;'></div>",
-            unsafe_allow_html=True
-        )
-
-        st.divider()
-
-        st.markdown(
-            "<div style='height: 6px;'></div>",
-            unsafe_allow_html=True
-        )
-
-        progress_buttons(
-            topic_data,
-            year,
-            subject,
-            subject,
-            "Notes",
-            "notes"
-        )
-
-        st.divider()
-
-        progress_buttons(
-            topic_data,
-            year,
-            subject,
-            subject,
-            "Revision Notes",
-            "revision"
-        )
-
-        st.divider()
-
-        progress_buttons(
-            topic_data,
-            year,
-            subject,
-            subject,
-            "Question Banks",
-            "question_banks"
-        )
-
-        st.divider()
-
-        col1, col2 = st.columns(
-            2,
-            gap="small"
-        )
-
-        with col1:
-
-            pyq = st.checkbox(
-                "PYQs",
-                value=topic_data.get(
-                    "pyqs",
-                    False
-                ),
-                key=(
-                    f"mm_pyq_"
-                    f"{css_key(year)}_"
-                    f"{css_key(subject)}"
-                )
-            )
-
-        with col2:
-
-            test = st.checkbox(
-                "Subject Test",
-                value=topic_data.get(
-                    "subject_test",
-                    False
-                ),
-                key=(
-                    f"mm_test_"
-                    f"{css_key(year)}_"
-                    f"{css_key(subject)}"
-                )
-            )
-
-        topic_data["pyqs"] = pyq
-        topic_data["subject_test"] = test
-
-        save_database(
-            st.session_state.years
-        )
 
     # ========================================================
     # NORMAL SUBJECT
     # ========================================================
+
+
+    if year == "Minor":
+
+        topic_data = years[year][subject]
+        if not isinstance(topic_data, dict):
+            topic_data = {}
+            years[year][subject] = topic_data
+
+        if st.button(
+            f"← Back to {year}",
+            key=f"major_minor_back_{css_key(year)}_{css_key(subject)}"
+        ):
+            go_year(year)
+            st.rerun()
+
+        st.title(subject)
+        topic_percentage = get_topic_percentage(topic_data)
+        progress_bar(topic_percentage, f"{topic_percentage:.1f}%")
+
+        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+        st.divider()
+        st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
+
+        progress_buttons(topic_data, year, subject, subject, "Notes", "notes")
+        st.divider()
+        progress_buttons(topic_data, year, subject, subject, "Revision Notes", "revision")
+        st.divider()
+        progress_buttons(topic_data, year, subject, subject, "Question Banks", "question_banks")
+        st.divider()
+
+        col1, col2 = st.columns(2, gap="small")
+        with col1:
+            pyq = st.checkbox("PYQs", value=topic_data.get("pyqs", False) is True, key=f"mm_pyq_{css_key(year)}_{css_key(subject)}")
+        with col2:
+            test = st.checkbox("Subject Test", value=topic_data.get("subject_test", False) is True, key=f"mm_test_{css_key(year)}_{css_key(subject)}")
+
+        old_pyq = topic_data.get("pyqs", False) is True
+        old_test = topic_data.get("subject_test", False) is True
+        if pyq != old_pyq or test != old_test:
+            topic_data["pyqs"] = pyq
+            topic_data["subject_test"] = test
+            save_database(st.session_state.years)
 
     else:
 
@@ -2121,7 +2198,7 @@ elif st.session_state.selected_page == "subject":
 
         st.title(subject)
 
-        topic_percentage = get_subject_topic_progress(
+        topic_percentage = get_subject_topic_progress_academic(
             topics
         )
 
@@ -2139,34 +2216,69 @@ elif st.session_state.selected_page == "subject":
             topics
         )
 
-        test_percentage, test_fraction = get_test_progress(
-            topics
+        progress_bar(
+            pyq_percentage,
+            f"Topic Pyqs {pyq_fraction}"
         )
 
-        col1, col2 = st.columns(
+        st.markdown(
+            "<div style='height: 8px;'></div>",
+            unsafe_allow_html=True
+        )
+
+        subject_col1, subject_col2 = st.columns(
             2,
             gap="small"
         )
 
-        with col1:
-
-            progress_bar(
-                pyq_percentage,
-                f"PYQs {pyq_fraction}"
+        with subject_col1:
+            subject_pyq = st.checkbox(
+                "Subject PYQs",
+                value=topics.get("subject_pyqs", False),
+                key=(
+                    f"subject_pyq_"
+                    f"{css_key(year)}_"
+                    f"{css_key(subject)}"
+                )
             )
 
-        with col2:
-
-            progress_bar(
-                test_percentage,
-                f"Tests {test_fraction}"
+        with subject_col2:
+            subject_test = st.checkbox(
+                "Subject Test",
+                value=topics.get("subject_test", False),
+                key=(
+                    f"subject_test_"
+                    f"{css_key(year)}_"
+                    f"{css_key(subject)}"
+                )
             )
+
+        old_subject_pyq = topics.get("subject_pyqs", False)
+        old_subject_test = topics.get("subject_test", False)
+
+        if (
+            subject_pyq != old_subject_pyq
+            or subject_test != old_subject_test
+        ):
+            topics["subject_pyqs"] = subject_pyq
+            topics["subject_test"] = subject_test
+            save_database(st.session_state.years)
 
         st.divider()
 
         st.subheader("Topics")
 
-        if not topics:
+        real_topics = {
+            topic_name: topic_data
+            for topic_name, topic_data in topics.items()
+            if topic_name not in {
+                "subject_pyqs",
+                "subject_test"
+            }
+            and isinstance(topic_data, dict)
+        }
+
+        if not real_topics:
 
             st.write(
                 "No topics added yet."
@@ -2179,21 +2291,16 @@ elif st.session_state.selected_page == "subject":
                 gap="small"
             )
 
-            for i, topic in enumerate(topics):
+            for i, topic in enumerate(real_topics):
 
-                topic_data = topics[topic]
+                topic_data = real_topics[topic]
 
-                topic_percentage = get_topic_percentage(
+                topic_percentage = get_topic_academic_percentage(
                     topic_data
                 )
 
                 pyq_status = topic_data.get(
                     "pyqs",
-                    False
-                )
-
-                test_status = topic_data.get(
-                    "subject_test",
                     False
                 )
 
@@ -2234,30 +2341,14 @@ elif st.session_state.selected_page == "subject":
                             f"{topic_percentage:.1f}%"
                         )
 
-                        status_col1, status_col2 = st.columns(
-                            2,
-                            gap="small"
+                        status_box(
+                            "Topic Pyq",
+                            pyq_status
                         )
-
-                        with status_col1:
-
-                            status_box(
-                                "PYQ",
-                                pyq_status
-                            )
-
-                        with status_col2:
-
-                            status_box(
-                                "Test",
-                                test_status
-                            )
-
 
 # ============================================================
 # TOPIC DETAIL PAGE
 # ============================================================
-
 elif st.session_state.selected_page == "topic":
 
     year = st.session_state.selected_year
