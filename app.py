@@ -496,12 +496,8 @@ def save_local_database(data):
 
 
 def cloud_save(data):
-
     try:
-        client = create_client(
-            st.secrets["SUPABASE_URL"],
-            st.secrets["SUPABASE_KEY"]
-        )
+        client = get_supabase_client()
 
         (
             client
@@ -516,8 +512,6 @@ def cloud_save(data):
         )
 
     except Exception:
-        # The local SQLite copy has already been saved.
-        # Cloud syncing will be attempted again on the next save.
         pass
 
 
